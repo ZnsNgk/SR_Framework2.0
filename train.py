@@ -1,10 +1,8 @@
 import os
-import models
 import utils
 import torch
 import json
 import argparse
-
 
 torch.backends.cudnn.enabled   = True
 torch.backends.cudnn.benchmark = True
@@ -27,9 +25,16 @@ def train():
     args = parse_args()
     config = load_json(args.cfg_file)
     hyperpara = utils.sys_config(args.cfg_file, config["system"], True)
+    if "val" in config:
+        val = utils.val_config(config["val"], False)
+        if val.use_val:
+            val.set_val_data(utils.Data(hyperpara, config["dataloader"], train=False, val=True, val_dataset=val.dataset)) 
+    else:
+        val = utils.val_config(default=True)
     data = utils.Data(hyperpara, config["dataloader"], True)
-    trainer = utils.Trainer(hyperpara, data, config["learning_rate"], args.breakpoint)
+    trainer = utils.Trainer(hyperpara, data, val, config["learning_rate"], args.breakpoint)
     trainer.train()
 
 if __name__ == "__main__":
     train()
+    

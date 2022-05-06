@@ -1,4 +1,5 @@
 import torch
+import numpy, random
 import utils
 import shutil
 import os
@@ -6,7 +7,7 @@ from tqdm import tqdm
 import models
 
 class Trainer():
-    def __init__(self, sys_conf, data, lr_conf, break_point):
+    def __init__(self, sys_conf, data, val, lr_conf, break_point):
         self.sys_conf = sys_conf
         self.data = data
         self.init_lr = lr_conf["init_learning_rate"]
@@ -21,6 +22,7 @@ class Trainer():
         self.curr_scale = 0
         self.curr_scale_list_pos = 0
         self.cal_psnr = utils.get_loss_PSNR(self.sys_conf.loss_function, self.data.normal)
+        self.val = val
         if "per_epoch" in lr_conf:
             self.per_epoch = lr_conf["per_epoch"]
         if "decay_rate" in lr_conf:
@@ -35,9 +37,23 @@ class Trainer():
             self.__check_folder()
             utils.check_log_file(self.sys_conf.model_name)
             self.show()
+    def __set_seed(self):
+        utils.log("-------------Now Setting Seed-------------", self.sys_conf.model_name)
+        random.seed(self.sys_conf.seed)
+        utils.log("Random seed is set with "+ str(self.sys_conf.seed), self.sys_conf.model_name, True)
+        numpy.random.seed(self.sys_conf.seed)
+        utils.log("Numpy seed is set with "+ str(self.sys_conf.seed), self.sys_conf.model_name, True)
+        torch.manual_seed(self.sys_conf.seed)
+        try:
+            torch.cuda.manual_seed_all(self.sys_conf.seed)
+            utils.log("GPU seed is set with "+ str(self.sys_conf.seed), self.sys_conf.model_name, True)
+        except:
+            utils.log("GPU seeding failed!"+ str(self.sys_conf.seed), self.sys_conf.model_name, True)
+        utils.log("Torch seed is set with "+ str(self.sys_conf.seed), self.sys_conf.model_name, True)
     def show(self):
         self.sys_conf.show()
         self.data.show()
+        self.val.show(self.sys_conf.model_name)
         utils.log("--------This is learning rate and decay config-------", self.sys_conf.model_name)
         utils.log("Init learning rate: " + str(self.init_lr), self.sys_conf.model_name)
         utils.log("Learning rate reset per scale: " + str(self.lr_reset), self.sys_conf.model_name)
@@ -95,6 +111,8 @@ class Trainer():
     def __update_scale(self, curr_scale):
         self.curr_scale = curr_scale
         self.data.update_scale(curr_scale)
+        if self.val.use_val:
+            self.val.val_data.update_scale(curr_scale)
     def __set_optim(self, m):
         trainable = filter(lambda x: x.requires_grad, m.parameters())
         if self.sys_conf.optim_args == None:
@@ -104,6 +122,8 @@ class Trainer():
     def _set_scheduler(self, optim):
         return utils.get_scheduler(self.decay_mode, optim, step_size=self.per_epoch, gamma=self.decay_rate, eta_min=self.eta_min)
     def train(self):
+        if self.sys_conf.seed != None:
+            self.__set_seed()
         if self.is_break:
             position = self.sys_conf.scale_factor.index(self.breakpoint_scale)
             for _ in range(position):
@@ -156,7 +176,9 @@ class Trainer():
                         optim.load_state_dict(optim_state)
                         scheduler.load_state_dict(scheduler_state)
             self.__update_scale(scale)
-            train_data = self.data.get_loader() 
+            train_data = self.data.get_loader()
+            if self.val.use_val:
+                val_loader = self.val.val_data.get_loader()
             for epoch in range(1, self.sys_conf.Epoch + 1):
                 if self.is_break and epoch <= self.breakpoint_epoch:
                     scheduler.step()
@@ -181,10 +203,49 @@ class Trainer():
                         t.set_postfix(loss = float(loss))
                 avg_loss = running_loss / i
                 psnr = self.cal_psnr(avg_loss)
-                s = "Epoch: " + str(epoch) + "| running loss: " + str(round(avg_loss, 4)) + "| PSNR: " + str(round(psnr, 2)) + "db| Curr lr: " \
-                    + str(round(optim.state_dict()['param_groups'][0]['lr'], 6)) + "| Now scale: " + str(self.curr_scale)
-                utils.log(s, self.sys_conf.model_name, True)
                 scheduler.step()
+                if self.val.use_val:
+                    if epoch == 1:
+                        best_loss = numpy.Inf
+                    else:
+                        try:
+                            best_loss = torch.load('./trained_model/' + self.sys_conf.model_name + '/x'+ str(self.curr_scale) + '_loss.pth')
+                            best_loss = best_loss["loss"]
+                        except:
+                            utils.log("Cannot find best log file, reset best loss to Inf", self.sys_conf.model_name, True)
+                            best_loss = numpy.Inf
+                    val_loss = 0.0
+                    v = 0
+                    with torch.no_grad():
+                        with tqdm(val_loader, desc="Epoch "+str(epoch), ncols=100, leave=False) as t:
+                            v += 1
+                            for lr, hr in t:
+                                if self.sys_conf.parallel:
+                                    lr = lr.to(self.sys_conf.device_in_prog)
+                                    hr = hr.cuda()
+                                else:
+                                    lr = lr.to(self.sys_conf.device_in_prog)
+                                    hr = hr.to(self.sys_conf.device_in_prog)
+                            sr = net(lr, scale)
+                            loss = loss_func(sr, hr)
+                            val_loss += float(loss)
+                            t.set_postfix(loss = float(loss))
+                    val_avg_loss = val_loss / v
+                    val_psnr = self.cal_psnr(val_avg_loss)
+                    if val_avg_loss < best_loss:
+                        best_loss = {"loss": val_avg_loss}
+                        torch.save(best_loss, './trained_model/' + self.sys_conf.model_name + '/x'+ str(self.curr_scale) + '_loss.pth')
+                        utils.log("Best loss update to "+str(round(val_avg_loss, 4))+", saving parameters to x"+str(self.curr_scale) + "_best.pth", self.sys_conf.model_name, True)
+                        PATH = './trained_model/' + self.sys_conf.model_name + '/x'+ str(self.curr_scale) + '_best.pth'
+                        if self.sys_conf.parallel:
+                            torch.save(net.module.state_dict(), PATH)
+                        else:
+                            torch.save(net.state_dict(), PATH)
+                s = "Epoch: " + str(epoch) + "| running loss: " + str(round(avg_loss, 4)) + "| PSNR: " + str(round(psnr, 2)) + "db"
+                if self.val.use_val:
+                    s += "|val loss: " + str(round(val_avg_loss, 4)) + "| val PSNR: " + str(round(val_psnr, 2)) + "db"
+                s += "| Curr lr: " + str(round(optim.state_dict()['param_groups'][0]['lr'], 6)) + "| Now scale: " + str(self.curr_scale)
+                utils.log(s, self.sys_conf.model_name, True)
                 if epoch % self.sys_conf.save_step == 0:
                     PATH = './trained_model/' + self.sys_conf.model_name + '/net_x'+ str(self.curr_scale) + '_' + str(epoch) + '.pth'
                     if self.sys_conf.parallel:
@@ -219,6 +280,8 @@ class Trainer():
             scheduler = self._set_scheduler(optim)
             net = net.to(self.sys_conf.device_in_prog)
             train_data = self.data.get_loader()
+            if self.val.use_val:
+                val_loader = self.val.val_data.get_loader()
             for epoch in range(1, self.sys_conf.Epoch + 1):
                 if self.is_break and epoch <= self.breakpoint_epoch:
                     scheduler.step()
@@ -243,8 +306,47 @@ class Trainer():
                         t.set_postfix(loss = float(loss))
                 avg_loss = running_loss / i
                 psnr = self.cal_psnr(avg_loss)
-                s = "Epoch: " + str(epoch) + "| running loss: " + str(round(avg_loss, 4)) + "| PSNR: " + str(round(psnr, 2)) + "db| Curr lr: " \
-                    + str(round(optim.state_dict()['param_groups'][0]['lr'], 6)) + "| Now scale: " + str(self.curr_scale)
+                if self.val.use_val:
+                    if epoch == 1:
+                        best_loss = numpy.Inf
+                    else:
+                        try:
+                            best_loss = torch.load('./trained_model/' + self.sys_conf.model_name + '/x'+ str(self.curr_scale) + '_loss.pth')
+                            best_loss = best_loss["loss"]
+                        except:
+                            utils.log("Cannot find best log file, reset best loss to Inf", self.sys_conf.model_name, True)
+                            best_loss = numpy.Inf
+                    val_loss = 0.0
+                    v = 0
+                    with torch.no_grad():
+                        with tqdm(val_loader, desc="Epoch "+str(epoch), ncols=100, leave=False) as t:
+                            v += 1
+                            for lr, hr in t:
+                                if self.sys_conf.parallel:
+                                    lr = lr.to(self.sys_conf.device_in_prog)
+                                    hr = hr.cuda()
+                                else:
+                                    lr = lr.to(self.sys_conf.device_in_prog)
+                                    hr = hr.to(self.sys_conf.device_in_prog)
+                            sr = net(lr)
+                            loss = loss_func(sr, hr)
+                            val_loss += float(loss)
+                            t.set_postfix(loss = float(loss))
+                    val_avg_loss = val_loss / v
+                    val_psnr = self.cal_psnr(val_avg_loss)
+                    if val_avg_loss < best_loss:
+                        best_loss = {"loss": val_avg_loss}
+                        torch.save(best_loss, './trained_model/' + self.sys_conf.model_name + '/x'+ str(self.curr_scale) + '_loss.pth')
+                        utils.log("Best loss update to "+str(round(val_avg_loss, 4))+", saving parameters to x"+str(self.curr_scale) + "_best.pth", self.sys_conf.model_name, True)
+                        PATH = './trained_model/' + self.sys_conf.model_name + '/x'+ str(self.curr_scale) + '_best.pth'
+                        if self.sys_conf.parallel:
+                            torch.save(net.module.state_dict(), PATH)
+                        else:
+                            torch.save(net.state_dict(), PATH)
+                s = "Epoch: " + str(epoch) + "| running loss: " + str(round(avg_loss, 4)) + "| PSNR: " + str(round(psnr, 2)) + "db"
+                if self.val.use_val:
+                    s += "|val loss: " + str(round(val_avg_loss, 4)) + "| val PSNR: " + str(round(val_psnr, 2)) + "db"
+                s += "| Curr lr: " + str(round(optim.state_dict()['param_groups'][0]['lr'], 6)) + "| Now scale: " + str(self.curr_scale)
                 utils.log(s, self.sys_conf.model_name, True)
                 scheduler.step()
                 if epoch % self.sys_conf.save_step == 0:
@@ -293,6 +395,8 @@ class Trainer():
                         optim.load_state_dict(optim_state)
                         scheduler.load_state_dict(scheduler_state)
             train_data = self.data.get_loader()
+            if self.val.use_val:
+                val_loader = self.val.val_data.get_loader()
             for epoch in range(1, self.sys_conf.Epoch + 1):
                 if self.is_break and epoch <= self.breakpoint_epoch:
                     scheduler.step()
@@ -317,8 +421,47 @@ class Trainer():
                         t.set_postfix(loss = float(loss))
                 avg_loss = running_loss / i
                 psnr = self.cal_psnr(avg_loss)
-                s = "Epoch: " + str(epoch) + "| running loss: " + str(round(avg_loss, 4)) + "| PSNR: " + str(round(psnr, 2)) + "db| Curr lr: " \
-                    + str(round(optim.state_dict()['param_groups'][0]['lr'], 6)) + "| Now scale: " + str(self.curr_scale)
+                if self.val.use_val:
+                    if epoch == 1:
+                        best_loss = numpy.Inf
+                    else:
+                        try:
+                            best_loss = torch.load('./trained_model/' + self.sys_conf.model_name + '/x'+ str(self.curr_scale) + '_loss.pth')
+                            best_loss = best_loss["loss"]
+                        except:
+                            utils.log("Cannot find best log file, reset best loss to Inf", self.sys_conf.model_name, True)
+                            best_loss = numpy.Inf
+                    val_loss = 0.0
+                    v = 0
+                    with torch.no_grad():
+                        with tqdm(val_loader, desc="Epoch "+str(epoch), ncols=100, leave=False) as t:
+                            v += 1
+                            for lr, hr in t:
+                                if self.sys_conf.parallel:
+                                    lr = lr.to(self.sys_conf.device_in_prog)
+                                    hr = hr.cuda()
+                                else:
+                                    lr = lr.to(self.sys_conf.device_in_prog)
+                                    hr = hr.to(self.sys_conf.device_in_prog)
+                            sr = net(lr)
+                            loss = loss_func(sr, hr)
+                            val_loss += float(loss)
+                            t.set_postfix(loss = float(loss))
+                    val_avg_loss = val_loss / v
+                    val_psnr = self.cal_psnr(val_avg_loss)
+                    if val_avg_loss < best_loss:
+                        best_loss = {"loss": val_avg_loss}
+                        torch.save(best_loss, './trained_model/' + self.sys_conf.model_name + '/x'+ str(self.curr_scale) + '_loss.pth')
+                        utils.log("Best loss update to "+str(round(val_avg_loss, 4))+", saving parameters to x"+str(self.curr_scale) + "_best.pth", self.sys_conf.model_name, True)
+                        PATH = './trained_model/' + self.sys_conf.model_name + '/x'+ str(self.curr_scale) + '_best.pth'
+                        if self.sys_conf.parallel:
+                            torch.save(net.module.state_dict(), PATH)
+                        else:
+                            torch.save(net.state_dict(), PATH)
+                s = "Epoch: " + str(epoch) + "| running loss: " + str(round(avg_loss, 4)) + "| PSNR: " + str(round(psnr, 2)) + "db"
+                if self.val.use_val:
+                    s += "|val loss: " + str(round(val_avg_loss, 4)) + "| val PSNR: " + str(round(val_psnr, 2)) + "db"
+                s += "| Curr lr: " + str(round(optim.state_dict()['param_groups'][0]['lr'], 6)) + "| Now scale: " + str(self.curr_scale)
                 utils.log(s, self.sys_conf.model_name, True)
                 scheduler.step()
                 if epoch % self.sys_conf.save_step == 0:

@@ -1,6 +1,6 @@
 from .bool import get_bool
 from .loss_func import get_loss_func, get_loss_PSNR
-from .config import sys_config
+from .config import sys_config, val_config
 from .logs import log, check_log_file
 from .data import Data, get_demo_loader
 from .optim import get_optimizer, get_scheduler

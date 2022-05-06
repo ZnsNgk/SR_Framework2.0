@@ -44,17 +44,28 @@ class SR_dataset_RGB(Dataset):
         else:
             return len(self.hr_img)
     def get_patch(self, lr, hr):
-        h, w, _ = lr.shape
-        randh = random.randint(0, h - self.patch_size)
-        randw = random.randint(0, w - self.patch_size)
-        toh = randh + self.patch_size
-        tow = randw + self.patch_size
-        lr_patch = lr[randh:toh, randw:tow ,:]
+        ih, iw = lr.shape[:2]
+        ip = self.patch_size
+        ix = random.randrange(0, (iw-ip))
+        iy = random.randrange(0, (ih-ip))
         if self.is_post:
-            hr_patch = hr[randh*self.scale : toh*self.scale, randw*self.scale : tow*self.scale, :]
+            tp = int(self.scale* self.patch_size)
+            tx, ty = int(self.scale * ix), int(self.scale * iy)
         else:
-            hr_patch = hr[randh : toh, randw : tow, :]
-        return lr_patch,  hr_patch
+            tx, ty = ix, iy
+            tp = ip
+        return lr[iy:iy + ip, ix:ix + ip, :], hr[ty:ty + tp, tx:tx + tp, :]
+        # h, w, _ = lr.shape
+        # randh = random.randint(0, h - self.patch_size)
+        # randw = random.randint(0, w - self.patch_size)
+        # toh = randh + self.patch_size
+        # tow = randw + self.patch_size
+        # lr_patch = lr[randh:toh, randw:tow ,:]
+        # if self.is_post:
+        #     hr_patch = hr[randh*self.scale : toh*self.scale, randw*self.scale : tow*self.scale, :]
+        # else:
+        #     hr_patch = hr[randh : toh, randw : tow, :]
+        # return lr_patch,  hr_patch
     def cut_pic(self, lr):
         [c, h_lr, w_lr] = lr.shape
         h_n = math.ceil(h_lr / self.cut)
@@ -220,8 +231,9 @@ def get_demo_loader(folder, scale, color_seq, normal, is_input, is_Y):
     return DataLoader(data, 1, False, num_workers=0, drop_last=False, pin_memory=False)
 
 class Data():
-    def __init__(self, sys_conf, data_config, train=True, test_patch=None):
+    def __init__(self, sys_conf, data_config, train=True, val=False, test_patch=None, val_dataset=None):
         self.train = train
+        self.val = val
         self.model_name = sys_conf.model_name
         self.dataset = sys_conf.dataset
         self.batch_size = (sys_conf.batch_size if train else 1)
@@ -230,6 +242,8 @@ class Data():
         self.shuffle = (get_bool(data_config["shuffle"]) if self.train else False)
         self.pic_pair = False
         self.test_patch = test_patch
+        if self.val:
+            self.dataset = val_dataset
         if sys_conf.color_channel == "RGB":
             self.color_is_RGB = True
         elif sys_conf.color_channel == "Y":
@@ -281,7 +295,10 @@ class Data():
             if self.train:
                 HR_folder += 'train/'
             else:
-                HR_folder += 'test/'
+                if self.val:
+                    HR_folder += 'val/'
+                else:
+                    HR_folder += 'test/'
             HR_folder += self.dataset
             LR_folder = HR_folder + '_LR/'
             HR_folder += '/'
@@ -292,8 +309,12 @@ class Data():
                 HR_folder += 'train/'
                 LR_folder += 'train/'
             else:
-                HR_folder += 'test/'
-                LR_folder += 'test/'
+                if self.val:
+                    HR_folder += 'val/'
+                    LR_folder += 'val/'
+                else:
+                    HR_folder += 'test/'
+                    LR_folder += 'test/'
             HR_folder += self.dataset
             LR_folder += self.dataset
             HR_folder += '/HR'

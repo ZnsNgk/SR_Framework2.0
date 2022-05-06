@@ -24,6 +24,7 @@ class sys_config():
         self.__set_scale()
         self.optim_args = None
         self.parallel = False
+        self.seed = None
         if "device" in cfg:
             self.device = cfg["device"]
         if "model_args" in cfg:
@@ -40,6 +41,8 @@ class sys_config():
                 self.loss_args = cfg["loss_args"]
             if "optim_args" in cfg:
                 self.optim_args = cfg["optim_args"]
+        if "seed" in cfg:
+            self.seed = cfg["seed"]
         self.__check_cuda()
         self.device_in_prog = device(self.device_in_prog)
     def __check_cuda(self):
@@ -103,6 +106,8 @@ class sys_config():
             log("Loss function args: " + str(self.loss_args), self.model_name)
         if self.optim_args != None:
             log("Optimizer args: " + str(self.optim_args), self.model_name)
+        if self.seed != None:
+            log("Seed: " + str(self.seed), self.model_name)
     def get_loss(self):
         if self.loss_args == None:
             return get_loss_func(self.loss_function)
@@ -112,6 +117,7 @@ class sys_config():
         self.scale_factor = list(dict.fromkeys(self.scale_factor))
         self.test_color_channel = test_cfg["color_channel"]
         self.test_all = False
+        self.test_best = args.best
         self.shave = 0
         self.shave_is_scale = False
         self.patch = None
@@ -139,3 +145,24 @@ class sys_config():
             self.test_file = args.once
         if args.dataset != None:
             self.test_dataset = [args.dataset]
+
+class val_config(sys_config):
+    def __init__(self, cfg={}, default=False):
+        self.use_val = False
+        self.dataset = ""
+        if default:
+            pass
+        else:
+            if "use_val" in cfg:
+                self.use_val = get_bool(cfg["use_val"])
+            if "val_dataset" in cfg:
+                self.dataset = cfg["val_dataset"]
+    
+    def set_val_data(self, val_data):
+        self.val_data = val_data
+    
+    def show(self, name):
+        log("-------------This is validation config--------------", name)
+        log("Enable validation: " + str(self.use_val), name)
+        if self.use_val:
+            log("Validation dataset: " + str(self.dataset), name)

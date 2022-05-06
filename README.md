@@ -9,6 +9,7 @@
 	|-- config
 	|-- data
 		|-- train
+		|-- val
 		|-- test
 	|-- demo_input
 	|-- demo_output
@@ -68,7 +69,7 @@ lpips
 
 然后在Matlab中打开`prepare_LR.m`文件，在第四行`model_mode`更改选择模型框架，`'pre'`为预上采样SR框架，`'post'`为后上采样SR框架，需要注意的是两种框架对应的LR尺寸不同；在第五行的下采样模式`downsample_mode`中更改下采样方法，`'BI'`为仅采用双三次插值法，`'BD'`为高斯模糊下采样。运行文件生成对应的LR图像。
 
-**注意：Matlab运行时需要将工作文件夹设置为本框架的根目录。**
+**注意：Matlab运行时需要将工作文件夹设置为本框架的根目录。最好先扩充数据集再执行生成LR操作。**
 
 
 
@@ -116,6 +117,8 @@ class MSRN(nn.Module):
 
 `dataloader`：数据加载器(DataLoader)的相关设置
 
+`val`：对模型验证的相关设置
+
 `test`：对模型的测试的相关设置
 
 以下是每个参数的详细解释：
@@ -125,6 +128,8 @@ class MSRN(nn.Module):
 `model_name`：模型名称，可以和上面的命名不一样，这个将作为训练和验证的模型名，且训练后的模型参数文件和测试的结果将会保存在以这个为名的文件夹下。
 
 `dataset`：训练集，名称需要与`./data/train/`文件夹下的训练集名称一致
+
+`seed`：随机数种子，默认为空
 
 `model_mode`：模型所采用的SR框架，即该模型是预上采样模型还是后上采样模型，`'pre'`为预上采样，`'post'`为后上采样。在这边，只要模型输入经过双三次插值处理后的LR图像统一设置为`'pre'`；只要模型输出图像尺寸比输入大的统一设置为`'post'`
 
@@ -202,7 +207,13 @@ class MSRN(nn.Module):
 
 ​	`vertical_flip`：垂直翻转图片，数据集扩充策略，可选为`True`或`False`，默认为`False`
 
-​	`repeat_factor`：训练时针对训练集重复的系数因子，与EDSR中的`test_every`参数等价，实际重复次数计算方法为`repeat_factor//(数据集长度//batch_size)`，默认为1000，若将其设置为0则不循环
+​	`repeat_factor`：训练时针对训练集重复的系数因子，与EDSR中的`test_every`参数等价，启用验证功能后其会在每repeat_factor个batch后执行验证，实际重复次数计算方法为`repeat_factor//(数据集长度//batch_size)`，默认为1000，若将其设置为0则不循环
+
+#### val
+
+`use_val`：是否启用验证功能，可选为`True`或`False`，默认为`False`
+
+`val_dataset`：验证集，名称需要与`./data/val/`文件夹下的验证集名称一致，默认为空
 
 #### test
 
@@ -255,12 +266,14 @@ python train.py SRCNN --breakpoint 'net_x2_100.pth'
 测试模型只需要调用`test.py`即可，然后在后面写上模型的名字、测试模式和模型文件，如果你只想测试某一个数据集，那么需要写上数据集文件名，即：
 
 ```
-python test.py <model> --<mode> 'para_file' --dataset 'dataset name'
+python test.py <model> --<mode> 'para_file' --dataset 'dataset name' --best
 ```
 
 其中，`mode`参数可以选择`all`和`once`。选择`all`会对当前模型的所有参数文件进行测试，可用于模型的收敛性测试或者找出效果最好的模型文件；选择`once`则对`'para_file'`的模型文件进行测试，`'para_file'`的格式和训练部分相同，不过可以测试`.pkl`文件，但是需要确保这个文件是存在的，否则会报错
 
 `dataset`是一个可选参数，如果不选择参数，模型会按照`json`文件的测试部分对`test_dataset`遍历并逐一测试，若选择该参数，则会只对`'dataset name'`执行测试，需要注意的是`'dataset name'`必须存在于`./data/test/`中，否则会报错
+
+`best`是一个可选项，若不选择即按照之前设置的模式进行测试，若选择该选项，在测试时会优先针对前期验证时保存到best模型进行测试。若未找到best模型则会跳过该阶段
 
 例：
 
@@ -273,11 +286,15 @@ python test.py SRCNN --once 'net_x2_150.pth'
 ```
 
 ```
-python test.py SRCNN --all --dataset 'Set5'
+python test.py SRCNN --all --dataset 'Set5' --best
 ```
 
 ```
 python test.py SRCNN --once 'net_x2_150.pth' --dataset 'Set14'
+```
+
+```
+python test.py SRCNN --best
 ```
 
 测试的所有结果保存在`./test_result/(model_name)/`文件夹下
@@ -371,3 +388,4 @@ v1.6 添加了多卡训练功能
 
 v2.0 修改数据加载逻辑，模仿EDSR框架中的数据加载逻辑，重新设置了RGB通道顺序（使用该框架运行1.x版本时必须设置dataloader中data_opts里的色彩顺序为`BGR`）
 
+v2.1 添加验证功能，添加保存验证集上损失最小的模型功能，添加随机数seed功能

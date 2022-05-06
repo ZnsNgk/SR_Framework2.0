@@ -15,6 +15,7 @@ def parse_args():
     parser.add_argument("--once", default = None, type = str, help="Your model parameter file path")
     parser.add_argument("--all", action = "store_true")
     parser.add_argument("--dataset", default = None, type = str)
+    parser.add_argument("--best", action = "store_true")
     args = parser.parse_args()
     return args
 

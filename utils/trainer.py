@@ -215,10 +215,8 @@ class Trainer():
                             utils.log("Cannot find best log file, reset best loss to Inf", self.sys_conf.model_name, True)
                             best_loss = numpy.Inf
                     val_loss = 0.0
-                    v = 0
                     with torch.no_grad():
                         with tqdm(val_loader, desc="Epoch "+str(epoch), ncols=100, leave=False) as t:
-                            v += 1
                             for lr, hr in t:
                                 if self.sys_conf.parallel:
                                     lr = lr.to(self.sys_conf.device_in_prog)
@@ -226,11 +224,11 @@ class Trainer():
                                 else:
                                     lr = lr.to(self.sys_conf.device_in_prog)
                                     hr = hr.to(self.sys_conf.device_in_prog)
-                            sr = net(lr, scale)
-                            loss = loss_func(sr, hr)
-                            val_loss += float(loss)
-                            t.set_postfix(loss = float(loss))
-                    val_avg_loss = val_loss / v
+                                sr = net(lr, scale)
+                                loss = loss_func(sr, hr)
+                                val_loss += float(loss)
+                                t.set_postfix(loss = float(loss))
+                    val_avg_loss = val_loss / len(val_loader)
                     val_psnr = self.cal_psnr(val_avg_loss)
                     if val_avg_loss < best_loss:
                         best_loss = {"loss": val_avg_loss}
@@ -317,10 +315,8 @@ class Trainer():
                             utils.log("Cannot find best log file, reset best loss to Inf", self.sys_conf.model_name, True)
                             best_loss = numpy.Inf
                     val_loss = 0.0
-                    v = 0
                     with torch.no_grad():
                         with tqdm(val_loader, desc="Epoch "+str(epoch), ncols=100, leave=False) as t:
-                            v += 1
                             for lr, hr in t:
                                 if self.sys_conf.parallel:
                                     lr = lr.to(self.sys_conf.device_in_prog)
@@ -328,11 +324,11 @@ class Trainer():
                                 else:
                                     lr = lr.to(self.sys_conf.device_in_prog)
                                     hr = hr.to(self.sys_conf.device_in_prog)
-                            sr = net(lr)
-                            loss = loss_func(sr, hr)
-                            val_loss += float(loss)
-                            t.set_postfix(loss = float(loss))
-                    val_avg_loss = val_loss / v
+                                sr = net(lr)
+                                loss = loss_func(sr, hr)
+                                val_loss += float(loss)
+                                t.set_postfix(loss = float(loss))
+                    val_avg_loss = val_loss / len(val_loader)
                     val_psnr = self.cal_psnr(val_avg_loss)
                     if val_avg_loss < best_loss:
                         best_loss = {"loss": val_avg_loss}
@@ -432,10 +428,8 @@ class Trainer():
                             utils.log("Cannot find best log file, reset best loss to Inf", self.sys_conf.model_name, True)
                             best_loss = numpy.Inf
                     val_loss = 0.0
-                    v = 0
                     with torch.no_grad():
                         with tqdm(val_loader, desc="Epoch "+str(epoch), ncols=100, leave=False) as t:
-                            v += 1
                             for lr, hr in t:
                                 if self.sys_conf.parallel:
                                     lr = lr.to(self.sys_conf.device_in_prog)
@@ -443,11 +437,11 @@ class Trainer():
                                 else:
                                     lr = lr.to(self.sys_conf.device_in_prog)
                                     hr = hr.to(self.sys_conf.device_in_prog)
-                            sr = net(lr)
-                            loss = loss_func(sr, hr)
-                            val_loss += float(loss)
-                            t.set_postfix(loss = float(loss))
-                    val_avg_loss = val_loss / v
+                                sr = net(lr)
+                                loss = loss_func(sr, hr)
+                                val_loss += float(loss)
+                                t.set_postfix(loss = float(loss))
+                    val_avg_loss = val_loss / len(val_loader)
                     val_psnr = self.cal_psnr(val_avg_loss)
                     if val_avg_loss < best_loss:
                         best_loss = {"loss": val_avg_loss}

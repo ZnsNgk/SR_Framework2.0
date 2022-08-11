@@ -2,7 +2,7 @@ import os
 
 dir_path = './'
 
-dir_list = ['config', 'data', 'data/train', 'data/test', 'demo_input', 'demo_output', 'log', 'test_result', 'trained_model']
+dir_list = ['config', 'data', 'data/train', 'data/val', 'data/test', 'demo_input', 'demo_output', 'log', 'test_result', 'trained_model']
 
 def check():
     for dir_name in dir_list:

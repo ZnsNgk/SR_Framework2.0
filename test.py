@@ -16,6 +16,8 @@ def parse_args():
     parser.add_argument("--all", action = "store_true")
     parser.add_argument("--dataset", default = None, type = str)
     parser.add_argument("--best", action = "store_true")
+    parser.add_argument("--data_root", default = "./", type = str,
+                        help="Your data folder path")
     args = parser.parse_args()
     return args
 
@@ -28,7 +30,7 @@ def load_json(args):
 def test():
     args = parse_args()
     config = load_json(args.cfg_file)
-    hyperpara = utils.sys_config(args.cfg_file, config["system"], False)
+    hyperpara = utils.sys_config(args.cfg_file, config["system"], args.data_root, False)
     hyperpara.set_test_config(args, config["test"])
     tester = utils.Tester(hyperpara, config["dataloader"])
     tester.test()

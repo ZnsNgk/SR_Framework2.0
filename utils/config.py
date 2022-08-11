@@ -1,4 +1,5 @@
 import os
+import torch
 from torch.cuda import is_available
 from torch import device
 from .logs import log
@@ -6,9 +7,13 @@ from .loss_func import get_loss_func
 from .bool import get_bool
 
 class sys_config():
-    def __init__(self, args, cfg, train=True):
+    def __init__(self, args, cfg, data_root, train=True):
         self.train = train
         self.model = args
+        self.data_root = data_root
+        self.data_root = self.data_root.replace("\\", "/")
+        if self.data_root[-1] != "/":
+            self.data_root = self.data_root + "/"
         self.model_name = cfg["model_name"]
         self.model_mode = cfg["model_mode"]
         self.color_channel = cfg["color_channel"]
@@ -33,6 +38,7 @@ class sys_config():
             self.scale_pos = cfg["scale_position"]
         if self.train:
             self.batch_size = cfg["batch_size"]
+            self.mini_batch = 0
             self.weight_init = cfg["weight_init"]
             self.loss_function = cfg["loss_function"]
             self.optim = cfg["optimizer"]
@@ -41,6 +47,8 @@ class sys_config():
                 self.loss_args = cfg["loss_args"]
             if "optim_args" in cfg:
                 self.optim_args = cfg["optim_args"]
+            if "mini_batch" in cfg:
+                self.mini_batch = cfg["mini_batch"]
         if "seed" in cfg:
             self.seed = cfg["seed"]
         self.__check_cuda()
@@ -76,6 +84,8 @@ class sys_config():
                         self.device_in_prog = "cuda:0"
                 else:
                     self.device_in_prog = "cuda:0"
+        elif ("mkldnn" or "opengl" or "opencl" or "ideep" or "hip" or "msnpu" or "xla" or "mps") in self.device:
+            self.device_in_prog = self.device
         else:
             self.device = "cpu"
             self.device_in_prog = "cpu"
@@ -87,10 +97,14 @@ class sys_config():
     def show(self):
         log("-------------This is system config--------------", self.model_name)
         log("Model: " + self.model, self.model_name)
+        if self.data_root != "./":
+            log("Data Root: " + self.data_root, self.model_name)
         log("Dataset: " + self.dataset, self.model_name)
         log("Upsample Position: " + self.model_mode, self.model_name)
         log("Color Channel: " + self.color_channel, self.model_name)
         log("Batch Size: " + str(self.batch_size), self.model_name)
+        if self.mini_batch != 0:
+            log("Mini Batch: " + str(self.mini_batch), self.model_name)
         log("Patch Size: " + str(self.patch_size), self.model_name)
         log("Training Epoch: " + str(self.Epoch), self.model_name)
         log("Training Device:" + str(self.device), self.model_name)
@@ -150,6 +164,8 @@ class val_config(sys_config):
     def __init__(self, cfg={}, default=False):
         self.use_val = False
         self.dataset = ""
+        self.multi_device = False
+        self.split = 0
         if default:
             pass
         else:
@@ -157,6 +173,11 @@ class val_config(sys_config):
                 self.use_val = get_bool(cfg["use_val"])
             if "val_dataset" in cfg:
                 self.dataset = cfg["val_dataset"]
+            if "split" in cfg:
+                self.split = cfg["split"]
+            if "multi_device" in cfg:
+                if torch.cuda.is_available() and self.split != 0:
+                    self.multi_device = get_bool(cfg["multi_device"])
     
     def set_val_data(self, val_data):
         self.val_data = val_data
@@ -166,3 +187,6 @@ class val_config(sys_config):
         log("Enable validation: " + str(self.use_val), name)
         if self.use_val:
             log("Validation dataset: " + str(self.dataset), name)
+            log("Validation multi device: " + str(self.multi_device), name)
+            if self.split != 0:
+                log("Validation split: " + str(self.split), name)

@@ -189,15 +189,24 @@ class Trainer():
                     for lr, hr in t:
                         i += 1
                         optim.zero_grad()
-                        if self.sys_conf.parallel:
-                            lr = lr.to(self.sys_conf.device_in_prog)
-                            hr = hr.cuda()
+                        if not self.sys_conf.mini_batch == 0:
+                            lrs = torch.split(lr, self.sys_conf.mini_batch, dim=0)
+                            hrs = torch.split(hr, self.sys_conf.mini_batch, dim=0)
+                            losses = []
+                            for lr_split, hr_split in zip(lrs, hrs):
+                                lr_split = lr_split.to(self.sys_conf.device_in_prog)
+                                hr_split = hr_split.to(self.sys_conf.device_in_prog)
+                                sr_split = net(lr_split, scale)
+                                l = loss_func(sr_split, hr_split)
+                                losses.append(l)
+                                l.backward()
+                            loss = torch.mean(torch.Tensor(losses))
                         else:
                             lr = lr.to(self.sys_conf.device_in_prog)
                             hr = hr.to(self.sys_conf.device_in_prog)
-                        sr = net(lr, scale)
-                        loss = loss_func(sr, hr)
-                        loss.backward()
+                            sr = net(lr, scale)
+                            loss = loss_func(sr, hr)
+                            loss.backward()
                         optim.step()
                         running_loss += float(loss)
                         t.set_postfix(loss = float(loss))
@@ -218,13 +227,25 @@ class Trainer():
                     with torch.no_grad():
                         with tqdm(val_loader, desc="Epoch "+str(epoch), ncols=100, leave=False) as t:
                             for lr, hr in t:
-                                if self.sys_conf.parallel:
-                                    lr = lr.to(self.sys_conf.device_in_prog)
-                                    hr = hr.cuda()
+                                hr = hr.to(self.sys_conf.device_in_prog)
+                                if not self.val.split == 0:
+                                    lrs = torch.split(lr, self.val.split, dim=3)
+                                    srs = []
+                                    if self.val.multi_device:
+                                        lr = torch.cat(lrs, dim=0)
+                                        lrs = torch.split(lr, torch.cuda.device_count() , dim=0)
+                                    for lr_split in lrs:
+                                        lr_split = lr_split.to(self.sys_conf.device_in_prog)
+                                        sr_split = net(lr_split, scale)
+                                        srs.append(sr_split)
+                                    if self.val.multi_device:
+                                        sr = torch.cat(srs, dim=0)
+                                        srs = torch.split(sr, 1, dim=0)
+                                    sr = torch.cat(srs, dim=3)
+                                    sr = sr.to(self.sys_conf.device_in_prog)
                                 else:
                                     lr = lr.to(self.sys_conf.device_in_prog)
-                                    hr = hr.to(self.sys_conf.device_in_prog)
-                                sr = net(lr, scale)
+                                    sr = net(lr, scale)
                                 loss = loss_func(sr, hr)
                                 val_loss += float(loss)
                                 t.set_postfix(loss = float(loss))
@@ -290,15 +311,24 @@ class Trainer():
                     for lr, hr in t:
                         i += 1
                         optim.zero_grad()
-                        if self.sys_conf.parallel:
-                            lr = lr.cuda()
-                            hr = hr.cuda()
+                        if not self.sys_conf.mini_batch == 0:
+                            lrs = torch.split(lr, self.sys_conf.mini_batch, dim=0)
+                            hrs = torch.split(hr, self.sys_conf.mini_batch, dim=0)
+                            losses = []
+                            for lr_split, hr_split in zip(lrs, hrs):
+                                lr_split = lr_split.to(self.sys_conf.device_in_prog)
+                                hr_split = hr_split.to(self.sys_conf.device_in_prog)
+                                sr_split = net(lr_split)
+                                l = loss_func(sr_split, hr_split)
+                                losses.append(l)
+                                l.backward()
+                            loss = torch.mean(torch.Tensor(losses))
                         else:
                             lr = lr.to(self.sys_conf.device_in_prog)
                             hr = hr.to(self.sys_conf.device_in_prog)
-                        sr = net(lr)
-                        loss = loss_func(sr, hr)
-                        loss.backward()
+                            sr = net(lr)
+                            loss = loss_func(sr, hr)
+                            loss.backward()
                         optim.step()
                         running_loss += float(loss)
                         t.set_postfix(loss = float(loss))
@@ -318,13 +348,25 @@ class Trainer():
                     with torch.no_grad():
                         with tqdm(val_loader, desc="Epoch "+str(epoch), ncols=100, leave=False) as t:
                             for lr, hr in t:
-                                if self.sys_conf.parallel:
-                                    lr = lr.to(self.sys_conf.device_in_prog)
-                                    hr = hr.cuda()
+                                hr = hr.to(self.sys_conf.device_in_prog)
+                                if not self.val.split == 0:
+                                    lrs = torch.split(lr, self.val.split, dim=3)
+                                    srs = []
+                                    if self.val.multi_device:
+                                        lr = torch.cat(lrs, dim=0)
+                                        lrs = torch.split(lr, torch.cuda.device_count() , dim=0)
+                                    for lr_split in lrs:
+                                        lr_split = lr_split.to(self.sys_conf.device_in_prog)
+                                        sr_split = net(lr_split)
+                                        srs.append(sr_split)
+                                    if self.val.multi_device:
+                                        sr = torch.cat(srs, dim=0)
+                                        srs = torch.split(sr, 1, dim=0)
+                                    sr = torch.cat(srs, dim=3)
+                                    sr = sr.to(self.sys_conf.device_in_prog)
                                 else:
                                     lr = lr.to(self.sys_conf.device_in_prog)
-                                    hr = hr.to(self.sys_conf.device_in_prog)
-                                sr = net(lr)
+                                    sr = net(lr)
                                 loss = loss_func(sr, hr)
                                 val_loss += float(loss)
                                 t.set_postfix(loss = float(loss))
@@ -403,15 +445,24 @@ class Trainer():
                     for lr, hr in t:
                         i += 1
                         optim.zero_grad()
-                        if self.sys_conf.parallel:
-                            lr = lr.cuda()
-                            hr = hr.cuda()
+                        if not self.sys_conf.mini_batch == 0:
+                            lrs = torch.split(lr, self.sys_conf.mini_batch, dim=0)
+                            hrs = torch.split(hr, self.sys_conf.mini_batch, dim=0)
+                            losses = []
+                            for lr_split, hr_split in zip(lrs, hrs):
+                                lr_split = lr_split.to(self.sys_conf.device_in_prog)
+                                hr_split = hr_split.to(self.sys_conf.device_in_prog)
+                                sr_split = net(lr_split)
+                                l = loss_func(sr_split, hr_split)
+                                losses.append(l)
+                                l.backward()
+                            loss = torch.mean(torch.Tensor(losses))
                         else:
                             lr = lr.to(self.sys_conf.device_in_prog)
                             hr = hr.to(self.sys_conf.device_in_prog)
-                        sr = net(lr)
-                        loss = loss_func(sr, hr)
-                        loss.backward()
+                            sr = net(lr)
+                            loss = loss_func(sr, hr)
+                            loss.backward()
                         optim.step()
                         running_loss += float(loss)
                         t.set_postfix(loss = float(loss))
@@ -431,13 +482,25 @@ class Trainer():
                     with torch.no_grad():
                         with tqdm(val_loader, desc="Epoch "+str(epoch), ncols=100, leave=False) as t:
                             for lr, hr in t:
-                                if self.sys_conf.parallel:
-                                    lr = lr.to(self.sys_conf.device_in_prog)
-                                    hr = hr.cuda()
+                                hr = hr.to(self.sys_conf.device_in_prog)
+                                if not self.val.split == 0:
+                                    lrs = torch.split(lr, self.val.split, dim=3)
+                                    srs = []
+                                    if self.val.multi_device:
+                                        lr = torch.cat(lrs, dim=0)
+                                        lrs = torch.split(lr, torch.cuda.device_count() , dim=0)
+                                    for lr_split in lrs:
+                                        lr_split = lr_split.to(self.sys_conf.device_in_prog)
+                                        sr_split = net(lr_split)
+                                        srs.append(sr_split)
+                                    if self.val.multi_device:
+                                        sr = torch.cat(srs, dim=0)
+                                        srs = torch.split(sr, 1, dim=0)
+                                    sr = torch.cat(srs, dim=3)
+                                    sr = sr.to(self.sys_conf.device_in_prog)
                                 else:
                                     lr = lr.to(self.sys_conf.device_in_prog)
-                                    hr = hr.to(self.sys_conf.device_in_prog)
-                                sr = net(lr)
+                                    sr = net(lr)
                                 loss = loss_func(sr, hr)
                                 val_loss += float(loss)
                                 t.set_postfix(loss = float(loss))

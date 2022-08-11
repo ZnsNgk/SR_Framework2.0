@@ -54,7 +54,7 @@ opencv-python
 pandas
 matplotlib
 tqdm
-torch
+torch>=1.8.1
 torchvision
 lpips
 ```
@@ -65,9 +65,9 @@ lpips
 
 ### 数据集
 
-将训练集文件夹拷贝至`./data/train`文件夹内，然后将测试集的一系列文件夹拷贝至`./data/test`文件夹内。若采取多个训练集同时训练，需要将多个训练集的图片放在一个文件夹中。
+将训练集文件夹拷贝至`/data/train`文件夹内，将验证集文件夹拷贝至`/data/val`文件夹内，然后将测试集的一系列文件夹拷贝至`/data/test`文件夹内。若采取多个训练集同时训练，需要将多个训练集的图片放在一个文件夹中。`data`文件夹可不必放在该项目文件夹中，但是如果要这么做的话必须设置`data_root`参数。
 
-然后在Matlab中打开`prepare_LR.m`文件，在第四行`model_mode`更改选择模型框架，`'pre'`为预上采样SR框架，`'post'`为后上采样SR框架，需要注意的是两种框架对应的LR尺寸不同；在第五行的下采样模式`downsample_mode`中更改下采样方法，`'BI'`为仅采用双三次插值法，`'BD'`为高斯模糊下采样。运行文件生成对应的LR图像。
+然后在Matlab中打开`/data/prepare_LR.m`文件，在第四行`model_mode`更改选择模型框架，`'pre'`为预上采样SR框架，`'post'`为后上采样SR框架，需要注意的是两种框架对应的LR尺寸不同；在第五行的下采样模式`downsample_mode`中更改下采样方法，`'BI'`为仅采用双三次插值法，`'BD'`为高斯模糊下采样。运行文件生成对应的LR图像。
 
 **注意：Matlab运行时需要将工作文件夹设置为本框架的根目录。最好先扩充数据集再执行生成LR操作。**
 
@@ -136,6 +136,8 @@ class MSRN(nn.Module):
 `color_channel`：模型的色彩通道，若模型输入为3通道的`RGB`图像，则设置为`RGB`；若模型输入为1通道的黑白图像，则设置为`Y`
 
 `batch_size`：批大小
+
+`mini_batch`：迷你批大小，设置为0时不使用mini_batch，默认为0
 
 `patch_size`：LR的切片大小，将LR和HR随机切片为一定大小的小块。在预上采样模型中，LR和HR切片大小一致；在后上采样模型中，HR的切片大小为`scale * patch_size`
 
@@ -215,6 +217,10 @@ class MSRN(nn.Module):
 
 `val_dataset`：验证集，名称需要与`./data/val/`文件夹下的验证集名称一致，默认为空
 
+`split`：切片数量，会轻微影响精度，防止验证图片过大导致爆显存，设置为0时表示不切片，默认为0
+
+`multi_device`：切片后是否使用多设备进行验证，仅在使用cuda时可用，设备数量在`device`参数中设置，设置为`False`则在第一个设备上进行验证，默认为`False`
+
 #### test
 
 `color_channel`：测试的色彩通道，可以使用RGB通道或者YCbCr中的亮度通道进行测试，即`RGB`和`Y`。若模型只针对图像的Y通道进行训练的话则只能选择`Y`
@@ -245,12 +251,20 @@ python train.py <model>
 python train.py SRCNN
 ```
 
+如果你的数据集不在项目文件夹中，则需要设置数据集路径，如下：
+
+```
+python train.py <model> --data_root path
+```
+
+其中，`data_root`表示数据集存放位置，必须为全英文路径，对其设置可以使得数据集不必放在该目录下，但是其必须指向该文件夹名，且该文件夹内的子文件夹应符合`data`文件夹的规范，建议使用绝对路径，设置为`./`表示当前文件夹，默认为`./`
+
 
 
 若你的模型跑到一半崩了，那么可以用断点模式对上一次保存的模型文件继续训练，如下：
 
 ```
-python train.py <model> --breakpoint 'para file'
+python train.py <model> --breakpoint para file
 ```
 
 其中，`'para_file'`格式如下：`'net_x3_50.pth'`，这个是保存在`train_model/(model_name)/`下的模型参数文件，调用的时候得确保这个文件是存在的，否则会报错
@@ -258,7 +272,7 @@ python train.py <model> --breakpoint 'para file'
 例：
 
 ```
-python train.py SRCNN --breakpoint 'net_x2_100.pth'
+python train.py SRCNN --breakpoint net_x2_100.pth --data_root /home/ZnsNgk/SR/data/
 ```
 
 ## 测试
@@ -266,7 +280,7 @@ python train.py SRCNN --breakpoint 'net_x2_100.pth'
 测试模型只需要调用`test.py`即可，然后在后面写上模型的名字、测试模式和模型文件，如果你只想测试某一个数据集，那么需要写上数据集文件名，即：
 
 ```
-python test.py <model> --<mode> 'para_file' --dataset 'dataset name' --best
+python test.py <model> --<mode> para_file --dataset dataset name --best --data_root path
 ```
 
 其中，`mode`参数可以选择`all`和`once`。选择`all`会对当前模型的所有参数文件进行测试，可用于模型的收敛性测试或者找出效果最好的模型文件；选择`once`则对`'para_file'`的模型文件进行测试，`'para_file'`的格式和训练部分相同，不过可以测试`.pkl`文件，但是需要确保这个文件是存在的，否则会报错
@@ -304,7 +318,7 @@ python test.py SRCNN --best
 想查看模型实际的效果，可以通过运行`demo.py`实现，在该模式下需要写上模型的名字、保存的模型文件名、需要演示的数据集等，如下所示：
 
 ```
-python demo.py <model> --file 'para_file' --<data> 'dataset name'
+python demo.py <model> --file para_file --<data> dataset_name --data_root path
 ```
 
 其中，`file`参数是你需要演示的模型文件或模型参数文件，`para_file`格式和测试部分相同
@@ -389,3 +403,5 @@ v1.6 添加了多卡训练功能
 v2.0 修改数据加载逻辑，模仿EDSR框架中的数据加载逻辑，重新设置了RGB通道顺序（使用该框架运行1.x版本时必须设置dataloader中data_opts里的色彩顺序为`BGR`）
 
 v2.1 添加验证功能，添加保存验证集上损失最小的模型功能，添加随机数seed功能
+
+v2.2 添加ROCM、mcp等计算设备支持（需要pytorch支持该设备，此功能尚未测试，不确定是否能够使用）；添加data_root选项；添加mini_batch功能；添加验证集切片功能

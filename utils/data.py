@@ -29,7 +29,7 @@ class SR_dataset_RGB(Dataset):
         if self.opts["repeat_factor"] == 0:
             self.repeat = 1
         else:
-            self.repeat = self.opts["repeat_factor"] // (len(self.hr_img)//batchsize)
+            self.repeat = int(self.opts["repeat_factor"] / (len(self.hr_img)/batchsize))
         self.hflip = get_bool(self.opts["horizontal_flip"])
         self.wflip = get_bool(self.opts["vertical_flip"])
         self.rotate = get_bool(self.opts["rotate"])
@@ -235,6 +235,7 @@ class Data():
         self.train = train
         self.val = val
         self.model_name = sys_conf.model_name
+        self.root = sys_conf.data_root
         self.dataset = sys_conf.dataset
         self.batch_size = (sys_conf.batch_size if train else 1)
         self.scale = 1
@@ -290,8 +291,10 @@ class Data():
         if (not self.opts["color_seq"] == "RGB") and (not self.opts["color_seq"] == "BGR"):
             raise ValueError("Color_seq only can be set in RGB or BGR")
     def __set_dataset_path(self):
+        if self.root == "./":
+            self.root += "data/"
         if not self.pic_pair:
-            HR_folder = './data/'
+            HR_folder = self.root
             if self.train:
                 HR_folder += 'train/'
             else:
@@ -303,8 +306,8 @@ class Data():
             LR_folder = HR_folder + '_LR/'
             HR_folder += '/'
         else:
-            HR_folder = './data/'
-            LR_folder = './data/'
+            HR_folder = self.root
+            LR_folder = self.root
             if self.train:
                 HR_folder += 'train/'
                 LR_folder += 'train/'

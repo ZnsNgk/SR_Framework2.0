@@ -12,6 +12,8 @@ def parse_args():
     parser.add_argument("cfg_file", help = "config file", type = str)
     parser.add_argument("--breakpoint", default = None, type = str,
                         help="If your model crashes when training, you can set breakpoints to resume training")
+    parser.add_argument("--data_root", default = "./", type = str,
+                        help="Your data folder path")
     args = parser.parse_args()
     return args
 
@@ -24,11 +26,11 @@ def load_json(args):
 def train():
     args = parse_args()
     config = load_json(args.cfg_file)
-    hyperpara = utils.sys_config(args.cfg_file, config["system"], True)
+    hyperpara = utils.sys_config(args.cfg_file, config["system"], args.data_root, True)
     if "val" in config:
         val = utils.val_config(config["val"], False)
         if val.use_val:
-            val.set_val_data(utils.Data(hyperpara, config["dataloader"], train=False, val=True, val_dataset=val.dataset)) 
+            val.set_val_data(utils.Data(hyperpara, config["dataloader"], train=False, val=True, val_dataset=val.dataset))
     else:
         val = utils.val_config(default=True)
     data = utils.Data(hyperpara, config["dataloader"], True)

@@ -30,7 +30,7 @@ def load_json(args):
 def test():
     args = parse_args()
     config = load_json(args.cfg_file)
-    hyperpara = utils.sys_config(args.cfg_file, config["system"], args.data_root, False)
+    hyperpara = utils.sys_config(args.cfg_file, config["system"], args.data_root, local_rank=-1, train=False)
     hyperpara.set_test_config(args, config["test"])
     tester = utils.Tester(hyperpara, config["dataloader"])
     tester.test()

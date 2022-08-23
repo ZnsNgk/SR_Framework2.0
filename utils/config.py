@@ -7,7 +7,7 @@ from .loss_func import get_loss_func
 from .bool import get_bool
 
 class sys_config():
-    def __init__(self, args, cfg, data_root, train=True):
+    def __init__(self, args, cfg, data_root, local_rank, train=True):
         self.train = train
         self.model = args
         self.data_root = data_root
@@ -29,7 +29,10 @@ class sys_config():
         self.__set_scale()
         self.optim_args = None
         self.parallel = False
+        self.DD_parallel = False
         self.seed = None
+        self.parallel_mode = None
+        self.backend = None
         if "device" in cfg:
             self.device = cfg["device"]
         if "model_args" in cfg:
@@ -49,10 +52,26 @@ class sys_config():
                 self.optim_args = cfg["optim_args"]
             if "mini_batch" in cfg:
                 self.mini_batch = cfg["mini_batch"]
+            if "parallel_opts" in cfg:
+                if "backend" in cfg["parallel_opts"]:
+                    self.backend = cfg["parallel_opts"]["backend"]
+                if "parallel_mode" in cfg["parallel_opts"]:
+                    self.parallel_mode = cfg["parallel_opts"]["parallel_mode"]
+                    if self.parallel_mode == "DDP":
+                        self.DD_parallel = True
+                        self.local_rank = local_rank
+                    elif self.DD_parallel == "DP":
+                        self.DD_parallel = False
+                        self.backend = None
         if "seed" in cfg:
             self.seed = cfg["seed"]
         self.__check_cuda()
-        self.device_in_prog = device(self.device_in_prog)
+        if self.DD_parallel and self.train:
+            torch.distributed.init_process_group(backend=self.backend)
+            self.device_in_prog = device(self.device_in_prog, self.local_rank)
+            torch.cuda.set_device(self.local_rank)
+        else:
+            self.device_in_prog = device(self.device_in_prog)
     def __check_cuda(self):
         if "cuda" in self.device:
             cuda_idx = self.device.split(':')
@@ -77,6 +96,11 @@ class sys_config():
                     if len(cuda_idx_int) > 1:
                         if self.train:
                             self.parallel = True
+                            if self.DD_parallel:
+                                self.parallel_mode = "DDP"
+                                self.n_GPUs = len(cuda_idx_int)
+                            else:
+                                self.parallel_mode = "DP"
                             self.device_in_prog = "cuda"
                         else:
                             self.device_in_prog = "cuda:0"
@@ -89,12 +113,17 @@ class sys_config():
         else:
             self.device = "cpu"
             self.device_in_prog = "cpu"
+        if not self.parallel:
+            self.parallel_mode = None
+            self.backend = None
     def __set_scale(self):
         if not isinstance(self.scale_factor, list):
             scale_list = []
             scale_list.append(self.scale_factor)
             self.scale_factor = scale_list
     def show(self):
+        if self.DD_parallel and (not self.local_rank == 0):
+            return
         log("-------------This is system config--------------", self.model_name)
         log("Model: " + self.model, self.model_name)
         if self.data_root != "./":
@@ -108,6 +137,10 @@ class sys_config():
         log("Patch Size: " + str(self.patch_size), self.model_name)
         log("Training Epoch: " + str(self.Epoch), self.model_name)
         log("Training Device:" + str(self.device), self.model_name)
+        if self.parallel_mode:
+            log("Parallel mode:" + str(self.parallel_mode), self.model_name)
+        if self.backend and self.DD_parallel:
+            log("Parallel init backend:" + str(self.backend), self.model_name)
         log("Training Scale: " + str(self.scale_factor), self.model_name)
         log("Trained Model Save Step: " + str(self.save_step), self.model_name)
         log("Weight Init: " + self.weight_init, self.model_name)
@@ -182,7 +215,9 @@ class val_config(sys_config):
     def set_val_data(self, val_data):
         self.val_data = val_data
     
-    def show(self, name):
+    def show(self, name, DD_parallel, local_rank):
+        if DD_parallel and (not local_rank == 0):
+            return
         log("-------------This is validation config--------------", name)
         log("Enable validation: " + str(self.use_val), name)
         if self.use_val:

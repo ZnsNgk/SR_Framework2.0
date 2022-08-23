@@ -193,6 +193,8 @@ class Tester():
                     utils.log("LPIPS: " + str(round(lpips, 4)), self.sys_conf.model_name, True)
             utils.make_csv_file_at_test_once(psnr_list, ssim_list, lpips_list, dataset_list, "x"+str(self.curr_scale)+"_best", self.save_path, self.sys_conf.test_color_channel, self.sys_conf.indicators)
     def show(self):
+        if self.sys_conf.DD_parallel and (not self.sys_conf.local_rank == 0):
+            return
         utils.log("", self.sys_conf.model_name)
         utils.log("--------This is model test config-------", self.sys_conf.model_name)
         utils.log("Test dataset: " + str(self.sys_conf.test_dataset), self.sys_conf.model_name)

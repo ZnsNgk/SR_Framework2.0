@@ -14,6 +14,8 @@ def parse_args():
                         help="If your model crashes when training, you can set breakpoints to resume training")
     parser.add_argument("--data_root", default = "./", type = str,
                         help="Your data folder path")
+    parser.add_argument("--local_rank", default = -1, type = int,
+                        help="Use for Distribute Data Parallel")
     args = parser.parse_args()
     return args
 
@@ -26,7 +28,7 @@ def load_json(args):
 def train():
     args = parse_args()
     config = load_json(args.cfg_file)
-    hyperpara = utils.sys_config(args.cfg_file, config["system"], args.data_root, True)
+    hyperpara = utils.sys_config(args.cfg_file, config["system"], args.data_root, args.local_rank, True)
     if "val" in config:
         val = utils.val_config(config["val"], False)
         if val.use_val:

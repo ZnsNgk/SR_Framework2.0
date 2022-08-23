@@ -44,7 +44,7 @@
 
 ### 环境配置
 
-本框架使用`Matlab2019`和`python 3.6`以上环境。
+本框架使用`Matlab2019`和`python 3.7`以上环境。
 
 本框架需要以下python包：
 
@@ -54,7 +54,7 @@ opencv-python
 pandas
 matplotlib
 tqdm
-torch>=1.8.1
+torch>=1.8.2
 torchvision
 lpips
 ```
@@ -135,7 +135,7 @@ class MSRN(nn.Module):
 
 `color_channel`：模型的色彩通道，若模型输入为3通道的`RGB`图像，则设置为`RGB`；若模型输入为1通道的黑白图像，则设置为`Y`
 
-`batch_size`：批大小
+`batch_size`：批大小（DDP训练时指的是总的batch_size）
 
 `mini_batch`：迷你批大小，设置为0时不使用mini_batch，默认为0
 
@@ -144,6 +144,12 @@ class MSRN(nn.Module):
 `Epoch`：遍历数据集的轮数
 
 `device`：训练和验证所使用的设备，可以设置多个GPU，格式为`cuda:id0, id1, ……`，但是测试时只使用第一个GPU，默认为`cuda:0`
+
+`parallel_opts`：多显卡训练的设置，只有`device`设置为cuda且显卡数量大于1时可用（不使用多显卡或采用`DP`模式时可以不写这个参数），具体如下：
+
+​	`parallel_mode`：多显卡训练模式，可选为`DP`和`DDP`，前者通过调用`torch.nn.DataParallel()`实现，后者通过调用`torch.nn.parallel.DistributedDataParallel()`实现，默认为`DP`
+
+​	`backend`：`DDP`模式下`torch.distributed.init_process_group()`的参数，仅在`DDP`模式下可用，可选为`nccl`和`gloo`，默认为`nccl`
 
 `scale_factor`：放大系数，可以设置为一个单一值，也可以设置成一个数组。设置为数组时模型将按照数组中的放大系数依次训练
 
@@ -235,6 +241,64 @@ class MSRN(nn.Module):
 
 `patch`：图像切片大小，将LR图像切成固定大小的小块送入网络，防止因图像过大而爆显存，设置为0时表示不切片，需要注意的是使用该功能可能会造成测试指标的略微下降且测试速度会大幅度减慢，一般仅在测试集LR图像尺寸很大时使用，默认为0
 
+### 超参数json文件模板：
+
+```
+{
+    "system":{
+        "model_name": "RDN",
+        "dataset": "DIV2K",
+        "model_mode": "post",
+        "color_channel": "RGB",
+        "seed":2022,
+        "batch_size": 16,
+        "mini_batch": 0,
+        "patch_size": 64,
+        "Epoch": 1000,
+        "device": "cuda:0, 1, 2, 3",
+        "parallel_opts": {"parallel_mode": "DDP", "backend": "nccl"},
+        "scale_factor": [2, 3, 4],
+        "save_step": 10,
+        "weight_init": "None",
+        "loss_function": "L1",
+        "optimizer": "Adam",
+        "scale_position": "init",
+        "model_args": {"G0": 64, "kSize": 3, "config": "B"},
+        "optim_args": {"betas": [0.9,0.999], "eps": 1e-8}
+    },
+    "learning_rate":{
+        "init_learning_rate": 1e-4,
+        "learning_rate_reset": "True",
+        "decay_mode": "Step",
+        "per_epoch": 200,
+        "decay_rate": 0.5
+    },
+    "val": {
+        "use_val": "True",
+        "val_dataset": "DIV2K",
+        "split": 0,
+        "multi_device": False
+    },
+    "dataloader":{
+        "num_workers": 6,
+        "pic_pair": "False",
+        "shuffle": "True",
+        "drop_last": "False",
+        "pin_memory": "True",
+        "normalize": "True",
+        "data_opts":{"rotate":"True", "horizontal_flip":"True", "vertical_flip":"True", "repeat_factor":1000}
+    },
+    "test":{
+        "color_channel": "Y",
+        "drew_pic": "True",
+        "test_dataset": ["Set5", "Set14", "BSDS100", "Urban100"],
+        "indicators": ["PSNR", "SSIM"],
+        "shave": "scale",
+        "patch": 0
+    }
+}
+```
+
 ## 训练
 
 训练模型只需要调用`train.py`即可，然后在后面写上模型的名字，即：
@@ -274,6 +338,8 @@ python train.py <model> --breakpoint para file
 ```
 python train.py SRCNN --breakpoint net_x2_100.pth --data_root /home/ZnsNgk/SR/data/
 ```
+
+**注：若使用DDP模式的多卡训练，需要在train.py前添加python -m torch.distributed.launch及其相关参数**
 
 ## 测试
 
@@ -405,3 +471,5 @@ v2.0 修改数据加载逻辑，模仿EDSR框架中的数据加载逻辑，重�
 v2.1 添加验证功能，添加保存验证集上损失最小的模型功能，添加随机数seed功能
 
 v2.2 添加ROCM、mcp等计算设备支持（需要pytorch支持该设备，此功能尚未测试，不确定是否能够使用）；添加data_root选项；添加mini_batch功能；添加验证集切片功能
+
+v2.3 添加DistributeDataParallel并行训练模式

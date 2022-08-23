@@ -7,7 +7,7 @@ from .bool import get_bool
 from.logs import log
 
 class SR_dataset_RGB(Dataset):
-    def __init__(self, HR_folder, LR_folder, scale, patch_size, opts, batchsize, train=True, is_post=True, normal=False, is_real=False, test_patch=None):
+    def __init__(self, HR_folder, LR_folder, scale, patch_size, opts, batchsize, train=True, is_post=True, normal=False, is_real=False, test_patch=None, n=1):
         self.scale = scale
         self.HR_folder = HR_folder
         self.LR_folder = LR_folder
@@ -29,7 +29,7 @@ class SR_dataset_RGB(Dataset):
         if self.opts["repeat_factor"] == 0:
             self.repeat = 1
         else:
-            self.repeat = int(self.opts["repeat_factor"] / (len(self.hr_img)/batchsize))
+            self.repeat = int(self.opts["repeat_factor"] / (len(self.hr_img)/batchsize)) * n
         self.hflip = get_bool(self.opts["horizontal_flip"])
         self.wflip = get_bool(self.opts["vertical_flip"])
         self.rotate = get_bool(self.opts["rotate"])
@@ -241,6 +241,14 @@ class Data():
         self.scale = 1
         self.normal = get_bool(data_config["normalize"])
         self.shuffle = (get_bool(data_config["shuffle"]) if self.train else False)
+        self.n = 1
+        if self.train:
+            self.DD_parallel = sys_conf.DD_parallel
+            if self.DD_parallel:
+                self.n_GPUs = sys_conf.n_GPUs
+                self.local_rank = sys_conf.local_rank
+                self.n = self.n_GPUs
+                self.batch_size = self.batch_size // self.n_GPUs
         self.pic_pair = False
         self.test_patch = test_patch
         if self.val:
@@ -268,6 +276,8 @@ class Data():
             self.opts = data_config["data_opts"]
         self.__check_dataopts()
     def show(self):
+        if self.DD_parallel and (not self.local_rank == 0):
+            return
         log("--------This is dataset and dataloader config--------", self.model_name)
         log("Dataloader num workers: " + str(self.num_workers), self.model_name)
         log("Dataset is pair: " + str(self.pic_pair), self.model_name)
@@ -330,9 +340,16 @@ class Data():
     def get_loader(self):
         LR_folder, HR_folder = self.__set_dataset_path()
         if self.color_is_RGB:
-            data = SR_dataset_RGB(HR_folder, LR_folder, self.scale, self.patch_size, self.opts, self.batch_size, self.train, self.is_post, self.normal, self.pic_pair, self.test_patch)
+            data = SR_dataset_RGB(HR_folder, LR_folder, self.scale, self.patch_size, self.opts, self.batch_size, self.train, self.is_post, self.normal, self.pic_pair, self.test_patch, self.n)
         else:
-            data = SR_dataset_Y(HR_folder, LR_folder, self.scale, self.patch_size, self.opts, self.batch_size, self.train, self.is_post, self.normal, self.pic_pair, self.test_patch)
+            data = SR_dataset_Y(HR_folder, LR_folder, self.scale, self.patch_size, self.opts, self.batch_size, self.train, self.is_post, self.normal, self.pic_pair, self.test_patch, self.n)
+        if self.train:
+            if self.DD_parallel:
+                from torch.utils.data.distributed import DistributedSampler
+                sampler = DistributedSampler(data, shuffle=self.shuffle)
+                loader = DataLoader(data, self.batch_size, shuffle=False, sampler=sampler, num_workers=self.num_workers, 
+                                drop_last=self.drop_last, pin_memory=self.pin_memory)
+                return loader, sampler
         loader = DataLoader(data, self.batch_size, self.shuffle, num_workers=self.num_workers, 
                             drop_last=self.drop_last, pin_memory=self.pin_memory)
         return loader
